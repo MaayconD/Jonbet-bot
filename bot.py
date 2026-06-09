@@ -20,6 +20,7 @@ horarios_registrados = set()
 
 sequencia_loss_atual = 0
 maior_sequencia_loss = 0
+data_stats = None
 
 stats = {
     "GERAL": {"SG": 0, "G1": 0, "LOSS": 0}
@@ -30,11 +31,7 @@ def enviar(msg):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": msg,
-                "parse_mode": "Markdown"
-            },
+            data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"},
             timeout=10
         )
         print("Telegram:", r.status_code, r.text)
@@ -46,10 +43,7 @@ def enviar_sticker(sticker_id):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendSticker",
-            data={
-                "chat_id": CHAT_ID,
-                "sticker": sticker_id
-            },
+            data={"chat_id": CHAT_ID, "sticker": sticker_id},
             timeout=10
         )
         print("Sticker:", r.status_code, r.text)
@@ -69,6 +63,24 @@ def hora_br(data_api):
     ).astimezone(
         timezone(timedelta(hours=-3))
     ).replace(tzinfo=None)
+
+
+def verificar_virada_dia():
+    global data_stats, stats, sequencia_loss_atual, maior_sequencia_loss
+
+    hoje = agora_br().date()
+
+    if data_stats is None:
+        data_stats = hoje
+        return
+
+    if hoje != data_stats:
+        stats = {"GERAL": {"SG": 0, "G1": 0, "LOSS": 0}}
+        sequencia_loss_atual = 0
+        maior_sequencia_loss = 0
+        data_stats = hoje
+
+        enviar("🔄 *Novo dia iniciado! Estatísticas zeradas.*")
 
 
 def cor_nome(cor):
@@ -158,7 +170,7 @@ def registrar_resultado(tipo):
 
 
 def registrar_sinal(entrada_dt, cor_entrada, texto_cor, extracao_dt, numero, cor_sorteada):
-    chave = entrada_dt.strftime("%Y-%m-%d %H:%M")
+    chave = entrada_dt.strftime("%Y-%m-%d %H:%M:%S")
 
     if entrada_dt < agora_br() - timedelta(seconds=30):
         print("⚠️ Sinal antigo ignorado:", chave)
@@ -172,7 +184,7 @@ def registrar_sinal(entrada_dt, cor_entrada, texto_cor, extracao_dt, numero, cor
 
     sinal = {
         "entrada_dt": entrada_dt,
-        "hora": entrada_dt.strftime("%H:%M"),
+        "hora": entrada_dt.strftime("%H:%M:%S"),
         "cor": cor_entrada,
         "texto_cor": texto_cor,
         "estrategia": "E1",
@@ -204,8 +216,11 @@ def gerar_estrategia_1(resultado):
         cor_entrada = 2
         texto_cor = "⚫ PRETO"
 
-    base = dt.replace(second=0, microsecond=0)
-    entrada = base + timedelta(minutes=numero)
+    if numero == 1:
+        entrada = dt + timedelta(seconds=30)
+    else:
+        base = dt.replace(second=0, microsecond=0)
+        entrada = base + timedelta(minutes=numero)
 
     registrar_sinal(
         entrada,
@@ -232,6 +247,8 @@ def tentar_enviar_proximo_sinal():
 
     if not fila_sinais:
         return
+
+    fila_sinais.sort(key=lambda x: x["entrada_dt"])
 
     proximo = fila_sinais[0]
     momento_envio = proximo["entrada_dt"] - timedelta(seconds=AVISAR_ANTES_SEGUNDOS)
@@ -285,7 +302,9 @@ def verificar(resultado):
 
     dt = hora_br(resultado["created_at"])
 
-    if dt < sinal_ativo["entrada_dt"]:
+    entrada_minuto = sinal_ativo["entrada_dt"].replace(second=0, microsecond=0)
+
+    if dt < entrada_minuto:
         return
 
     cor = resultado["color"]
@@ -332,6 +351,8 @@ enviar("✅ *Bot iniciado com sucesso!*")
 primeira_leitura = True
 
 while True:
+    verificar_virada_dia()
+
     dados = buscar_resultados()
 
     if not dados:
