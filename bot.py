@@ -295,7 +295,7 @@ def registrar_sinal_horario(resultado):
 
     if cor == 2:
         cor_entrada = 1
-        texto_cor = "🟢 VERDE"
+        texto_cor = "⚫ PRETO"
     else:
         cor_entrada = 2
         texto_cor = "⚫ PRETO"
