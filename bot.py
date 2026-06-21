@@ -26,6 +26,8 @@ hora_maior_seq = "--:--"
 maior_gale = 0
 data_stats = None
 
+mensagem_nivel_id = None
+
 
 def enviar(msg):
     try:
@@ -37,6 +39,39 @@ def enviar(msg):
         print("Telegram:", r.status_code, r.text)
     except Exception as e:
         print("Erro Telegram:", e)
+
+
+def enviar_com_retorno(msg):
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"},
+            timeout=10
+        )
+        print("Telegram:", r.status_code, r.text)
+
+        if r.status_code == 200:
+            return r.json()["result"]["message_id"]
+
+    except Exception as e:
+        print("Erro Telegram:", e)
+
+    return None
+
+
+def apagar_mensagem(message_id):
+    if message_id is None:
+        return
+
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/deleteMessage",
+            data={"chat_id": CHAT_ID, "message_id": message_id},
+            timeout=10
+        )
+        print("Delete:", r.status_code, r.text)
+    except Exception as e:
+        print("Erro ao apagar mensagem:", e)
 
 
 def enviar_sticker(sticker_id):
@@ -97,7 +132,7 @@ def texto_cor(cor):
 
 def verificar_virada_dia():
     global data_stats, stats, nivel_loss_atual, maior_seq
-    global hora_maior_seq, maior_gale, sinal_ativo, cor_atual
+    global hora_maior_seq, maior_gale, sinal_ativo, cor_atual, mensagem_nivel_id
 
     hoje = agora_br().date()
 
@@ -113,6 +148,7 @@ def verificar_virada_dia():
         maior_gale = 0
         sinal_ativo = None
         cor_atual = None
+        mensagem_nivel_id = None
         data_stats = hoje
 
         enviar("🔄 *Novo dia iniciado! Estatísticas zeradas.*")
@@ -151,6 +187,21 @@ def enviar_apuracao(texto, resultado_final):
 
     print(msg)
     enviar(msg)
+
+
+def enviar_mensagem_nivel():
+    global mensagem_nivel_id
+
+    if mensagem_nivel_id is not None:
+        apagar_mensagem(mensagem_nivel_id)
+
+    msg = (
+        "📌 *OPERANDO NÍVEL*\n\n"
+        f"SEQ: {nivel_loss_atual:02d}/{NIVEL_MAXIMO:02d}\n"
+        f"🎯 Entrada: {texto_cor(cor_atual)}"
+    )
+
+    mensagem_nivel_id = enviar_com_retorno(msg)
 
 
 def enviar_sinal():
@@ -199,7 +250,7 @@ def atualizar_seq_max():
 
 
 def finalizar_green():
-    global sinal_ativo, nivel_loss_atual
+    global sinal_ativo, nivel_loss_atual, mensagem_nivel_id
 
     stats["GREEN"] += 1
     atualizar_gx(0)
@@ -209,6 +260,10 @@ def finalizar_green():
     enviar_apuracao("✅ *GREEN SG*", "GREEN")
 
     sinal_ativo = None
+
+    # Não apaga a última mensagem de nível quando der GREEN.
+    # Também solta o controle dela para não apagar em uma próxima sequência.
+    mensagem_nivel_id = None
 
     print("✅ GREEN. Mantendo a mesma cor.")
     enviar_sinal()
@@ -223,10 +278,8 @@ def finalizar_loss():
     nivel_loss_atual += 1
     atualizar_seq_max()
 
-    enviar_apuracao("⛔ *LOSS*", "LOSS")
-
-    if nivel_loss_atual >= NIVEL_MAXIMO:
-        nivel_loss_atual = 0
+    if nivel_loss_atual > NIVEL_MAXIMO:
+        nivel_loss_atual = 1
         print("🔄 Níveis reiniciados após atingir o máximo.")
 
     sinal_ativo = None
@@ -234,6 +287,8 @@ def finalizar_loss():
     trocar_cor()
 
     print(f"⛔ LOSS. Alternando para {texto_cor(cor_atual)}.")
+
+    enviar_mensagem_nivel()
     enviar_sinal()
 
 
